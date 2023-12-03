@@ -39,6 +39,9 @@ class Events:
     def addPass(self, playername):
         self.history[-1].passes.append(playername)
 
+    def addAccusation(self, playername: str, accusation: Dict[str, str]):
+        pass
+
     def addShow(self, playername):
         self.history[-1].whoShowed = playername
 
@@ -80,14 +83,26 @@ class Tracker_Card:
     def addAntiPlayer(self, playername: str):
         if playername not in self.antiPlayers: self.antiPlayers.append(playername)
 
+    def getAntiCards(self):
+        return self.antiPlayers
+    
 class Tracker:
     def __init__(self):
         self.cards: Dict[str, Tracker_Card] = {card:Tracker_Card(card) for card in RAWCARDS}
 
+    # initialises the tracker to include a players hand
+    def loadHand(self, hand: List[Tracker_Card], playername):
+        for card in hand:
+            self.cards[card].player = playername
+
     def addAntiCard(self, card: str, playername: str):
         self.cards[card].addAntiPlayer(playername)
 
-    def cardHeldBy(self, card: str, playername: str):
+    def addAntiCards(self, cards: List[str], playername: str):
+        for card in cards:
+            self.addAntiCard(card, playername)
+
+    def addCard(self, card: str, playername: str):
         self.cards[card].setPlayer(playername)
 
     def getCard(self, card: str) -> Tracker_Card:
@@ -135,21 +150,13 @@ class Agent(Player):
     def __init__(self, name: str, names: list, ishuman: bool):
         Player.__init__(self, name, names, ishuman)
         
-        self.profileNames: List[str] = names
+        self.playernames: List[str] = names
         self.tracker: Tracker = Tracker()
 
     def turn(self):
-        # deduce if any cards are held by no one
-        # antiCards = [card for card in RAWCARDS if card not in self.hand]
-        # for profile in self.profiles.values():
-        #     antiCards = [card for card in profile.antiCards if card in antiCards]
-
-        #     if len(antiCards) == 0:
-        #         break
-
-        for card in self.tracker.getCards():
-            if len(card.antiPlayers) == numCards - 1:
-                pass
+        # collate list of all cards that are known to be held by no one
+        cards = self.tracker.getCards()
+        antiCards = [card.card for card in cards if len(card.antiPlayers) == numPlayers - 1]
 
         # if some cards arent held by anyone, these are the centre cards
         if len(antiCards) > 0:
@@ -165,10 +172,10 @@ class Agent(Player):
             # no accusation. deduce from previous rumours
             self.deduction()
 
-    def deduction(self):
-        # consoleOut(f"{self.name} is making a deduction", "[.]>")
-        cardTracker = self.getCardTracker()
+        return False
 
+    def deduction(self):
+        tracker = self.tracker.cards
         updated = True
 
         while updated:
@@ -179,57 +186,27 @@ class Agent(Player):
                 rumour = event.rumourCards()
                 
                 # skip if player answering is known to hold any of the rumour cards
-                if any([playerAnswered == cardTracker[card][0] for card in rumour]): continue
+                if any([playerAnswered == tracker[card].player for card in rumour]): continue
 
                 # skip if player deducing holds any of the rumour cards
-                if any([self.name == cardTracker[card][0] for card in rumour]): continue
+                if any([self.name == tracker[card].player for card in rumour]): continue
 
-                rumour = [card for card in rumour if cardTracker[card][0] == '']
-                rumour = [card for card in rumour if playerAnswered not in cardTracker[card][1]]
+                rumour = [card for card in rumour if tracker[card].player == '']
+                rumour = [card for card in rumour if playerAnswered not in tracker[card].getAntiCards()]
 
                 if len(rumour) == 1:
                     card = rumour[0]
-                    cardTracker[card][0] = playerAnswered
+                    tracker[card].player = playerAnswered
                     updated = True
 
-    def getCardTracker(self):
-        tracker: Dict[str,str] = {key:['',[]] for key in RAWCARDS} # key:[cardHolder, [antiCardHolders]]
-        
-        # knowns = [[profile.name, profile.hand] for profile in self.profiles.values()]
-        # antiCards = [[profile.name, profile.antiCards] for profile in self.profiles.values()]
+    def getKnownCards(self) -> List[str]:
+        items = self.tracker.getCards()
+        cards = [card.card for card in items if card.player != '']
 
-        # for playername, cards in knowns:
-        #     for card in cards:
-        #         tracker[card] = playername
-
-        for profile in self.profiles.values():
-            for card in profile.hand:
-                tracker[card][0] = profile.name
-
-            for card in profile.antiCards:
-                tracker[card][1].append(profile.name)
-
-        return tracker
-
-    def getKnownCards(self):
-        # cards = []
-
-        # for name in self.profiles:
-        #     cards += self.profiles[name].hand
-
-        # cards += self.hand
-
-        knownCards: Dict[str,str] = {}
-        cardPairs = [[profile.name, profile.hand] for profile in self.profiles.values()]
-
-        for playername, cards in cardPairs:
-            for card in cards:
-                knownCards[card] = playername
-
-        return knownCards
+        return cards 
     
-    def getUnknownCards(self):
-        knowns = list(self.getKnownCards().keys())
+    def getUnknownCards(self) -> List[str]:
+        knowns = self.getKnownCards()
         unknowns = [card for card in RAWCARDS if card not in knowns]
 
         return unknowns
@@ -248,18 +225,28 @@ class Agent(Player):
 
         return rumour
 
-    def seeCard(self, card, playerName: str):
-        self.profiles[playerName].addCard(card)
+    def seeCard(self, card, playername: str):
+        self.tracker.addCard(card, playername)
 
-    def seeAntiCards(self, rumour: dict, playerName: str):
-        self.profiles[playerName].addAntiCards(rumour.values())
+    def seeAntiCards(self, rumour: dict, playername: str):
+        self.tracker.addAntiCards(rumour.values(), playername)
 
-    def printProfile(self, playerName: str):
-        self.profiles[playerName].print(self.name)
+    def printProfile(self, playername: str):
+        hand = [card.card for card in self.tracker.cards.values() if card.player == playername]
+        antiCards = [card.card for card in self.tracker.cards.values() if playername in card.antiPlayers]
+        
+        print(playername)
+        print(f"Hand: {hand}\nAntiCards: {antiCards}\n")
+    
+    def setHand(self, hand: List[str]):
+        self.hand = hand
+        self.tracker.loadHand(hand, self.name)
 
     def printAllProfiles(self):
-        for profile in self.profiles.values():
-            profile.print(self.name)
+        print(f"\n{self.name}'s profiles")
+
+        for playername in self.playernames:
+            self.printProfile(playername)
 
 
 
@@ -325,7 +312,7 @@ def dealcards(players) -> List[str]:
         deal[i % numPlayers].append(card)
 
     for i, hand in enumerate(deal):
-        players[i].hand = hand
+        players[i].setHand(hand)
 
     return centreCards
 
@@ -374,8 +361,10 @@ def accuse(name: str, accusation: Dict[str,str]):
         events.addAccusation(name, accusation)
 
         # player is removed from the game
+        global players, numPlayers, turn
         players = [player for player in players if player.name != name]
         numPlayers -= 1
+        turn -= 1
 
 def formatRumour(playername: str, rumour: Dict[str,str]):
     return "%s thinks it was %s in the %s with the %s." %(playername, *rumour.values())
@@ -395,7 +384,6 @@ gameover = False
 turn = 0
 currentPlayer = players[0]
 centreCards = dealcards(players)
-
 
 
 if __name__ == "__main__":
@@ -436,8 +424,15 @@ if __name__ == "__main__":
                 events.addPass(playerAsked.name)
 
 
-        turn += 1
-        if turn >= len(players): turn = 0
+        turn = (turn + 1) % numPlayers
+
+        if numPlayers == 1:
+            consoleOut(f"{players[0]} wins the game! By default :/", ">#")
+        elif numPlayers == 0:
+            raise ValueError
+
+        # currentPlayer.printAllProfiles()
+        print([card for card in currentPlayer.getKnownCards()])
 
 
         # events.getlast().print()
