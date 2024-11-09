@@ -1,15 +1,48 @@
 
+from typing import List, Dict
 
 
-cardDict = {'people':  ['mustard','scarlet','green','white','plum','peacock'],
-            'rooms':   ['study','observatory','kitchen','living room','dining room','library','patio','pool'],
-            'weapons': ['knife','wrench','poison','axe','bat','candlestick']}
 
-RAWCARDS = []
-for key in cardDict:
-    RAWCARDS += cardDict[key]
+class Tracker_Card:
+    def __init__(self, card: str):
+        self.card: str = card
+        self.player: str = ''
+        self.antiPlayers: List[str] = []
 
-numCards = len(RAWCARDS)
+    def setPlayer(self, playername: str):
+        if playername != self.player: self.player = playername
+
+    def addAntiPlayer(self, playername: str):
+        if playername not in self.antiPlayers: self.antiPlayers.append(playername)
+
+    def getAntiCards(self):
+        return self.antiPlayers
+    
+class Tracker:
+    def __init__(self):
+        self.cards: Dict[str, Tracker_Card] = {card:Tracker_Card(card) for card in RAWCARDS}
+
+    # initialises the tracker to include a players hand
+    def loadHand(self, hand: List[Tracker_Card], playername):
+        for card in hand:
+            self.cards[card].player = playername
+
+    def addAntiCard(self, card: str, playername: str):
+        self.cards[card].addAntiPlayer(playername)
+
+    def addAntiCards(self, cards: List[str], playername: str):
+        for card in cards:
+            self.addAntiCard(card, playername)
+
+    def addCard(self, card: str, playername: str):
+        self.cards[card].setPlayer(playername)
+
+    def getCard(self, card: str) -> Tracker_Card:
+        return self.cards[card]
+
+    def getCards(self) -> List[Tracker_Card]:
+        return list(self.cards.values())
+
 
 
 def isperson(card):
@@ -41,3 +74,14 @@ def categorise(cards: list):
                 categorised[category].append(card)
 
     return categorised
+
+
+
+cardDict = {'people':  ['mustard','scarlet','green','white','plum','peacock'],
+            'rooms':   ['study','observatory','kitchen','living room','dining room','library','patio','pool'],
+            'weapons': ['knife','wrench','poison','axe','bat','candlestick']}
+
+RAWCARDS = []
+for key in cardDict: RAWCARDS += cardDict[key]
+
+numCards = len(RAWCARDS)

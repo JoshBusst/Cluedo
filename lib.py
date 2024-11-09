@@ -1,4 +1,6 @@
 
+
+
 def isequal(lst1, lst2):
     assert(len(lst1) == len(lst2))
 
@@ -7,8 +9,6 @@ def isequal(lst1, lst2):
             return False
     
     return True
-
-
 
 def pickrandom(lst):
     from random import randint
@@ -19,3 +19,4 @@ def pickrandom(lst):
         return lst[rand]
     elif isinstance(lst, dict):
         return lst.values()[rand]
+    

@@ -1,10 +1,176 @@
 from cards import *
+from players import *
 from typing import List, Dict
-from abc import abstractmethod
 
 
 DONTPRINT: bool = 0
 
+
+
+class Player:
+    def __init__(self, name: str, names: list, ishuman: bool):
+        self.name: str = name
+        self.hand: list = []
+        self.ishuman: bool = ishuman
+
+    @abstractmethod
+    def seeCard(self, card, playerName: str):
+        pass
+
+    @abstractmethod
+    def startRumour(self):
+        pass
+
+    @abstractmethod
+    def turn(self) -> bool:
+        pass
+
+    def hasCards(self, rumour: Dict[str,str]):
+        return any([card in self.hand for card in rumour.values()])
+        
+    def hasCard(self, card: str):
+        return card in self.hand
+
+
+    def printRumour(self, rumour: dict):
+        consoleOut(formatRumour(self.name, rumour), '>>:')
+        
+    def printHand(self):
+        consoleOut(f"{self.name}'s hand: {self.hand}")
+
+
+class Agent(Player):
+    def __init__(self, name: str, names: list, ishuman: bool):
+        Player.__init__(self, name, names, ishuman)
+        
+        self.playernames: List[str] = names
+        self.tracker: Tracker = Tracker()
+
+    def turn(self):
+        # return 1 for rumour and 2 for accusation
+
+        # collate list of all cards that are known to be held by no one
+        cards = self.tracker.getCards()
+        antiCards = [card.card for card in cards if len(card.antiPlayers) == numPlayers - 1]
+
+        # if some cards arent held by anyone, these are the centre cards
+        if len(antiCards) >= 3:
+            answer = categorise(antiCards)
+
+            # if all answers are found, accuse
+            if all([val != [] for val in answer.values()]):
+                answer = {key:answer[key][0] for key in answer}
+                # accuse(self.name, answer)
+
+                return 2, answer
+        else:
+            # no accusation. deduce from previous rumours
+            tracker = self.tracker.cards
+            updated = True
+
+            while updated:
+                updated = False
+
+                for event in events.getall():
+                    playerAnswered = event.playername
+                    rumour = event.rumourCards()
+                    
+                    # skip if player who answered is known to hold any of the rumour cards
+                    if any([playerAnswered == tracker[card].player for card in rumour]): continue
+
+                    # skip if player deducing holds any of the rumour cards
+                    if any([self.name == tracker[card].player for card in rumour]): continue
+
+                    rumour = [card for card in rumour if tracker[card].player == '']
+                    rumour = [card for card in rumour if playerAnswered not in tracker[card].getAntiCards()]
+
+                    if len(rumour) == 1:
+                        card = rumour[0]
+                        tracker[card].player = playerAnswered
+                        updated = True
+
+        return 1, self.startRumour()
+
+    def getKnownCards(self) -> List[str]:
+        items = self.tracker.getCards()
+        cards = [card.card for card in items if card.player != '']
+
+        return cards 
+    
+    def getUnknownCards(self) -> List[str]:
+        knowns = self.getKnownCards()
+        unknowns = [card for card in RAWCARDS if card not in knowns]
+
+        return unknowns
+
+    def startRumour(self):
+        unknowns: dict = categorise(self.getUnknownCards())
+        rumour = edict()
+
+        for key in unknowns:
+            if len(unknowns[key]) == 0: rumour[key] = pickrandom(cardDict[key])
+            else:                       rumour[key] = pickrandom(unknowns[key])
+
+        return rumour
+
+    def seeCard(self, card, playername: str):
+        self.tracker.addCard(card, playername)
+
+    def seeAntiCards(self, rumour: dict, playername: str):
+        self.tracker.addAntiCards(rumour.values(), playername)
+
+    def printProfile(self, playername: str):
+        hand = [card.card for card in self.tracker.cards.values() if card.player == playername]
+        antiCards = [card.card for card in self.tracker.cards.values() if playername in card.antiPlayers]
+        
+        print(playername)
+        print(f"Hand: {hand}\nAntiCards: {antiCards}\n")
+    
+    def setHand(self, hand: List[str]):
+        self.hand = hand
+        self.tracker.loadHand(hand, self.name)
+
+    def printAllProfiles(self):
+        print(f"\n{self.name}'s profiles")
+
+        for playername in self.playernames:
+            self.printProfile(playername)
+
+
+class Human(Player):
+    def __init__(self, name, names, ishuman):
+        Player.__init__(self, name, names, ishuman)
+
+    def seeCard(self, card, playerName: str):
+        consoleOut(f"{playerName} shows you the card {card}")
+
+    def startRumour(self):
+        person = self.getInput(cardDict['people'],
+                               "Please accuse a person.",
+                               f"*Please select a valid player name from: {cardDict['people']}.")
+        
+        room = self.getInput(cardDict['rooms'],
+                               "Please input a room.",
+                               f"*Please select a valid room from: {cardDict['rooms']}")
+
+        weapon = self.getInput(cardDict['weapons'],
+                               "Please input a murder weapon.",
+                               f"*Please select a valid weapon from: {cardDict['weapons']}")
+        
+        return {'people': person, 'rooms': room, 'weapons': weapon}
+
+    def turn(self):
+        pass
+    
+    def getInput(self, list, startMsg, errorMsg):
+        consoleOut(startMsg)
+        info = input(">_ ").lower()
+
+        while info not in list:
+            consoleOut(errorMsg)
+            info = input(">_ ").lower()
+
+        return info
 
 
 class Event:
@@ -71,221 +237,6 @@ class Events:
 
 
 
-class Tracker_Card:
-    def __init__(self, card: str):
-        self.card: str = card
-        self.player: str = ''
-        self.antiPlayers: List[str] = []
-
-    def setPlayer(self, playername: str):
-        if playername != self.player: self.player = playername
-
-    def addAntiPlayer(self, playername: str):
-        if playername not in self.antiPlayers: self.antiPlayers.append(playername)
-
-    def getAntiCards(self):
-        return self.antiPlayers
-    
-class Tracker:
-    def __init__(self):
-        self.cards: Dict[str, Tracker_Card] = {card:Tracker_Card(card) for card in RAWCARDS}
-
-    # initialises the tracker to include a players hand
-    def loadHand(self, hand: List[Tracker_Card], playername):
-        for card in hand:
-            self.cards[card].player = playername
-
-    def addAntiCard(self, card: str, playername: str):
-        self.cards[card].addAntiPlayer(playername)
-
-    def addAntiCards(self, cards: List[str], playername: str):
-        for card in cards:
-            self.addAntiCard(card, playername)
-
-    def addCard(self, card: str, playername: str):
-        self.cards[card].setPlayer(playername)
-
-    def getCard(self, card: str) -> Tracker_Card:
-        return self.cards[card]
-
-    def getCards(self) -> List[Tracker_Card]:
-        return list(self.cards.values())
-
-
-
-class Player:
-    def __init__(self, name: str, names: list, ishuman: bool):
-        self.name: str = name
-        self.hand: list = []
-        self.ishuman: bool = ishuman
-
-    @abstractmethod
-    def seeCard(self, card, playerName: str):
-        pass
-
-    @abstractmethod
-    def startRumour(self):
-        pass
-
-    @abstractmethod
-    def turn(self) -> bool:
-        pass
-
-    def hasCards(self, rumour: Dict[str,str]):
-        return any([card in self.hand for card in rumour.values()])
-        
-    def hasCard(self, card: str):
-        return card in self.hand
-
-
-    def printRumour(self, rumour: dict):
-        consoleOut(formatRumour(self.name, rumour), '>>:')
-        
-    def printHand(self):
-        consoleOut(f"{self.name}'s hand: {self.hand}")
-
-        
-
-class Agent(Player):
-    def __init__(self, name: str, names: list, ishuman: bool):
-        Player.__init__(self, name, names, ishuman)
-        
-        self.playernames: List[str] = names
-        self.tracker: Tracker = Tracker()
-
-    def turn(self):
-        # collate list of all cards that are known to be held by no one
-        cards = self.tracker.getCards()
-        antiCards = [card.card for card in cards if len(card.antiPlayers) == numPlayers - 1]
-
-        # if some cards arent held by anyone, these are the centre cards
-        if len(antiCards) > 0:
-            answer = categorise(antiCards)
-
-            # if all answers are found, accuse
-            if all([val != [] for val in answer.values()]):
-                answer = {key:answer[key][0] for key in answer}
-                accuse(self.name, answer)
-
-                return True
-        else:
-            # no accusation. deduce from previous rumours
-            self.deduction()
-
-        return False
-
-    def deduction(self):
-        tracker = self.tracker.cards
-        updated = True
-
-        while updated:
-            updated = False
-
-            for event in events.getall():
-                playerAnswered = event.playername
-                rumour = event.rumourCards()
-                
-                # skip if player answering is known to hold any of the rumour cards
-                if any([playerAnswered == tracker[card].player for card in rumour]): continue
-
-                # skip if player deducing holds any of the rumour cards
-                if any([self.name == tracker[card].player for card in rumour]): continue
-
-                rumour = [card for card in rumour if tracker[card].player == '']
-                rumour = [card for card in rumour if playerAnswered not in tracker[card].getAntiCards()]
-
-                if len(rumour) == 1:
-                    card = rumour[0]
-                    tracker[card].player = playerAnswered
-                    updated = True
-
-    def getKnownCards(self) -> List[str]:
-        items = self.tracker.getCards()
-        cards = [card.card for card in items if card.player != '']
-
-        return cards 
-    
-    def getUnknownCards(self) -> List[str]:
-        knowns = self.getKnownCards()
-        unknowns = [card for card in RAWCARDS if card not in knowns]
-
-        return unknowns
-
-    def startRumour(self):
-        unknowns: dict = categorise(self.getUnknownCards())
-        rumour = edict()
-
-        for key in unknowns:
-            if len(unknowns[key]) == 0:
-                # rand = randint(0, len(cardDict[key]) - 1)
-                rumour[key] = pickrandom(cardDict[key])
-            else:
-                # rand = randint(0, len(unknowns[key]) - 1)
-                rumour[key] = pickrandom(unknowns[key])
-
-        return rumour
-
-    def seeCard(self, card, playername: str):
-        self.tracker.addCard(card, playername)
-
-    def seeAntiCards(self, rumour: dict, playername: str):
-        self.tracker.addAntiCards(rumour.values(), playername)
-
-    def printProfile(self, playername: str):
-        hand = [card.card for card in self.tracker.cards.values() if card.player == playername]
-        antiCards = [card.card for card in self.tracker.cards.values() if playername in card.antiPlayers]
-        
-        print(playername)
-        print(f"Hand: {hand}\nAntiCards: {antiCards}\n")
-    
-    def setHand(self, hand: List[str]):
-        self.hand = hand
-        self.tracker.loadHand(hand, self.name)
-
-    def printAllProfiles(self):
-        print(f"\n{self.name}'s profiles")
-
-        for playername in self.playernames:
-            self.printProfile(playername)
-
-
-
-class Human(Player):
-    def __init__(self, name, names, ishuman):
-        Player.__init__(self, name, names, ishuman)
-
-    def seeCard(self, card, playerName: str):
-        consoleOut(f"{playerName} shows you the card {card}")
-
-    def startRumour(self):
-        person = self.getInput(cardDict['people'],
-                               "Please accuse a person.",
-                               f"*Please select a valid player name from: {cardDict['people']}.")
-        
-        room = self.getInput(cardDict['rooms'],
-                               "Please input a room.",
-                               f"Please select a valid room from: {cardDict['rooms']}")
-
-        weapon = self.getInput(cardDict['weapons'],
-                               "Please input a murder weapon.",
-                               f"Please select a valid weapon from: {cardDict['weapons']}")
-        
-        return {'people': person, 'rooms': room, 'weapons': weapon}
-
-    def turn(self):
-        pass
-    
-    def getInput(self, list, startMsg, errorMsg):
-        consoleOut(startMsg)
-        info = input(">_ ").lower()
-
-        while info not in list:
-            consoleOut(errorMsg)
-            info = input(">_ ").lower()
-
-        return info
-
-
 
 def loadPlayers(names) -> List[Player]:
     return [Agent(name, names, False) for name in names]
@@ -336,9 +287,8 @@ def showAntiCards(p1: Player, p2: Player, rumour: Dict[str,str]):
         consoleOut(f"{p1.name} does not have a card.")
         p2.seeAntiCards(rumour, p1.name)
 
-def nextPlayers(p1: Player):
-    ind: int = players.index(p1) + 1
-    return [players[(i + ind) % numPlayers] for i in range(numPlayers - 1)]
+def nextPlayers(index: int):
+    return [players[(i + index + 1) % numPlayers] for i in range(numPlayers - 1)]
             
 def consoleOut(msg: str, char: str=''):
     if DONTPRINT: return
@@ -369,6 +319,22 @@ def accuse(name: str, accusation: Dict[str,str]):
 def formatRumour(playername: str, rumour: Dict[str,str]):
     return "%s thinks it was %s in the %s with the %s." %(playername, *rumour.values())
 
+def startRumour(player):
+    if player.ishuman:
+        raise ValueError
+    else:
+        rumour = player.startRumour()
+        player.printRumour(rumour)
+        events.addRumour(player.name, rumour)
+
+    for playerAsked in nextPlayers(turn):
+        if playerAsked.hasCards(rumour):
+            showCard(playerAsked, player, rumour)
+            events.addShow(playerAsked.name)
+            break
+        else:
+            showAntiCards(playerAsked, player, rumour)
+            events.addPass(playerAsked.name)
 
 
 
@@ -387,11 +353,6 @@ centreCards = dealcards(players)
 
 
 if __name__ == "__main__":
-    for p in players:
-        p.printHand()
-
-
-    # while not gameover
     for i in range(100):
         if gameover:
             break
@@ -399,43 +360,22 @@ if __name__ == "__main__":
         currentPlayer = players[turn]
         consoleOut(f"{currentPlayer.name}'s turn!", "It's")
 
-        playerAccused = currentPlayer.turn()
+        action = currentPlayer.turn()
 
-        # player accused and since the game is not over they must have failed
-        if playerAccused:
-            continue
-
-        # start rumour
-        if currentPlayer.ishuman:
-            raise ValueError
+        if action == 1: # start rumour
+            startRumour(currentPlayer)
+        elif action == 2: # accuse
+            pass
         else:
-            rumour = currentPlayer.startRumour()
-            currentPlayer.printRumour(rumour)
-            events.addRumour(currentPlayer.name, rumour)
-
-        # ask players if they have cards
-        for playerAsked in nextPlayers(currentPlayer):
-            if playerAsked.hasCards(rumour):
-                showCard(playerAsked, currentPlayer, rumour)
-                events.addShow(playerAsked.name)
-                break
-            else:
-                showAntiCards(playerAsked, currentPlayer, rumour)
-                events.addPass(playerAsked.name)
-
+            print(action)
+            raise ValueError
 
         turn = (turn + 1) % numPlayers
 
         if numPlayers == 1:
-            consoleOut(f"{players[0]} wins the game! By default :/", ">#")
-        elif numPlayers == 0:
+            consoleOut(f"{players[0].name} wins the game! By default :/", ">#")
+            exit()
+        elif numPlayers <= 0:
             raise ValueError
-
-        # currentPlayer.printAllProfiles()
-        print([card for card in currentPlayer.getKnownCards()])
-
-
-        # events.getlast().print()
-        print()
 
     consoleOut(f"Turns taken: {i}", ">>:")
