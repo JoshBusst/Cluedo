@@ -91,23 +91,29 @@ def dealcards(players: list[Player]) -> list[str]:
 
     return centreCards
 
-def accuse(name: str, accusation: dict[str,str]):
-    consoleOut("%s accuses %s in the %s with the %s!" %(name, *accusation.values()), '>!')
+def removePlayer(playerName: str) -> None:
+    global players, numPlayers
 
-    if isequal(list(accusation.values()), centreCards):
-        global gameover
+    players = [player for player in players if player.name != playerName]
+    numPlayers = len(players)
 
-        consoleOut(f"{name} wins the game!", '>#')
-        gameover = True
-    else:
-        consoleOut(f"{name} has been murdered!", '>!')
-        events.addAccusation(name, accusation)
+# def accuse(name: str, accusation: dict[str,str]):
+#     consoleOut("%s accuses %s in the %s with the %s!" %(name, *accusation.values()), '>!')
 
-        # player is removed from the game
-        global players, numPlayers, turn
-        players = [player for player in players if player.name != name]
-        numPlayers -= 1
-        turn -= 1
+#     if isequal(list(accusation.values()), centreCards):
+#         global gameover
+
+#         consoleOut(f"{name} wins the game!", '>#')
+#         gameover = True
+#     else:
+#         consoleOut(f"{name} has been murdered!", '>!')
+#         events.addAccusation(name, accusation)
+
+#         # player is removed from the game
+#         global players, numPlayers, turn
+#         players = [player for player in players if player.name != name]
+#         numPlayers -= 1
+#         turn -= 1
 
 def startRumour(currentPlayer: Player):
     rumour: dict[str,str] = currentPlayer.getRumour()
@@ -116,6 +122,7 @@ def startRumour(currentPlayer: Player):
 
     for playerAsked in otherPlayers(turn):
         if playerAsked.hasCards(rumour):
+            currentPlayer.seeCard(playerAsked.name, playerAsked.showCard(currentPlayer.name, rumour))
             publiciseShow(playerAsked.name, currentPlayer.name, rumour)
             events.addShow(playerAsked.name)
             break
@@ -124,16 +131,28 @@ def startRumour(currentPlayer: Player):
             events.addPass(playerAsked.name)
 
 def makeAccusation(currentPlayer: Player):
-    pass
+    accusation: dict[str,str] = currentPlayer.getAccusation()
+    printAccusation(currentPlayer.name, accusation)
 
-def publicisePass(playerName: str, currentRumour: dict[str, str]) -> None:
+    events.addAccusation(currentPlayer.name, accusation)
+
+    if isequal(centreCards, list(accusation.values())):
+        consoleOut(f"\n{currentPlayer.name} is the winner!!!\n")
+        exit()
+    else:
+        consoleOut(f"\n{currentPlayer.name} has been murdered!")
+        removePlayer(currentPlayer.name)
+
+
+
+def publicisePass(playerName: str, currentRumour: dict[str, list]) -> None:
     consoleOut(f"{playerName} passes.")
 
     for player in otherPlayers(turn):
         if not player.ishuman:
             player.recordPass(playerName, currentRumour)
 
-def publiciseShow(showerName: str, seerName: str, currentRumour: dict[str, str]) -> None:
+def publiciseShow(showerName: str, seerName: str, currentRumour: dict[str, list]) -> None:
     consoleOut(f"{showerName} shows {seerName} a card.")
 
     for player in otherPlayers(turn):
@@ -150,19 +169,13 @@ def otherPlayers(index: int) -> list[Player]:
     
 
 
-players: list[Player] = []
+players: list[Player] = [] #[Human("Josh")]
 events = Events()
+numPlayers: int = 4
 
-p1 = Human("Barbera")
-p2 = Human("Shaun")
-p3 = Human("Sandra")
-p4 = Human("Kim")
-p5 = Human("Jim")
-p6 = Human("Lance")
-p7 = Human("Quinoa")
+for i in range(numPlayers):
+    players.append(Agent(genericNames[i]))
 
-players = [p1,p2,p3,p4,p5,p6,p7]
-numPlayers: int = len(players)
 centreCards: list[str] = dealcards(players)
 
 gameover: bool = False
@@ -183,14 +196,10 @@ if __name__ == "__main__":
         if action == 'r': # start rumour
             consoleOut(f"{currentPlayer.name} starts a rumour.")
             startRumour(currentPlayer)
-            # rumour: dict[str,str] = currentPlayer.getRumour()
-            # printRumour(currentPlayer.name, rumour)
 
         elif action == 'a': # accuse
             consoleOut(f"{currentPlayer.name} makes an accusation!")
             makeAccusation(currentPlayer)
-            # rumour: dict[str,str] = currentPlayer.getAccusation()
-            # printAccusation(currentPlayer.name, rumour)
 
         else:
             consoleOut(f"{currentPlayer.name} is confused. No action taken.")
@@ -200,7 +209,7 @@ if __name__ == "__main__":
         turn = nextTurn()
 
         if len(players) == 1:
-            consoleOut(f"># {players[0].name} wins the game! By default :/")
+            consoleOut("># %s wins the game! By default :/\n It was %s in the %s with the %s." %(players[0].name, *centreCards))
             exit()
 
         elif len(players) <= 0:

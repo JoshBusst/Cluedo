@@ -1,6 +1,7 @@
 from abc import abstractmethod
 from cards import *
 from console import *
+from lib import pickrandom, flatten
 
 from random import shuffle
 
@@ -13,7 +14,11 @@ class Player:
         self.ishuman: bool = ishuman
 
     @abstractmethod
-    def seeCard(self, card: str, playerName: str) -> None:
+    def seeCard(self, playername: str, card: str) -> None:
+        pass
+
+    @abstractmethod
+    def showCard(self, seerName: str, rumour: dict[str,str]) -> str:
         pass
 
     @abstractmethod
@@ -24,14 +29,15 @@ class Player:
     def getAccusation(self) -> dict[str,str]:
         pass
 
+    @abstractmethod
+    def setHand(self, hand: list[str]) -> None:
+        pass
+
     def turn(self) -> int:
         pass
 
-    def setHand(self, hand: list[str]) -> None:
-        self.hand = hand
-
     def hasCards(self, rumour: dict[str,str]) -> bool:
-        return any([card in self.hand for card in rumour.values()])
+        return any([card in self.hand for card in flatten(rumour.values())])
         
     def hasCard(self, card: str) -> bool:
         return card in self.hand
@@ -47,19 +53,50 @@ class Agent(Player):
         
         self.tracker: Tracker = Tracker()
 
-    def recordCard(self, playername: str, card: str) -> None:
-        self.tracker.addCard(playername, card)
+    def seeCard(self, playername: str, card: str) -> None:
+        self.tracker.trackCard(playername, card)
 
     def recordPass(self, playername: str, rumour: dict) -> None:
-        self.tracker.addAntiCards(playername, rumour.values())
-        
-    def recordShow(self, player1name: str, player2name: str, rumour: dict) -> None:
-        pass
-        # self.tracker.addAntiCards(playername, rumour.values())
-        
-    def turn(self) -> int:
-        pass
+        self.tracker.trackAntiCards(playername, flatten(rumour.values()))
+    
+    # record when a player shows a card
+    def recordShow(self, showername: str, seername: str, rumour: dict) -> None:
+        pass #self.tracker.trackAntiCards(playername, rumour.values())
 
+    def showCard(self, seerName: str, rumour: dict[str,str]) -> str:
+        cardsHeld: list[str] = [card for card in flatten(rumour.values()) if card in self.hand]
+        
+        return pickrandom(cardsHeld)
+
+    def setHand(self, hand: list[str]) -> None:
+        self.hand = hand
+        self.tracker.trackCards(self.name, hand)
+        
+    def getRumour(self) -> dict[str, str]:
+        unknowns: dict[str, list] = self.tracker.getUnknowns()
+        unknowns: list[list] = list(unknowns.values())
+
+        rumour: dict[str, str] = categorise([pickrandom(unknowns[0]),
+                                             pickrandom(unknowns[1]),
+                                             pickrandom(unknowns[2])])
+        
+        return rumour
+
+    def getAccusation(self) -> dict[str, str]:
+        unknowns: dict[str, list] = self.tracker.getUnknowns()
+        accusation: dict[str, str] = {'people':  unknowns['people'][0],
+                                      'rooms':   unknowns['rooms'][0],
+                                      'weapons': unknowns['weapons'][0]}
+        return accusation
+
+    def turn(self) -> int:
+        unknowns: dict[str, list] = self.tracker.getUnknowns()
+        log(unknowns)
+
+        if all(len(seg) == 1 for seg in unknowns.values()):
+            return 'a'
+        else:
+            return 'r'
 
 
 
@@ -67,41 +104,37 @@ class Human(Player):
     def __init__(self, name: str):
         Player.__init__(self, name, True)
 
-    def seeCard(self, playerName: str, card: str):
-        consoleOut(f"{playerName} shows you the card {card}")
+    def setHand(self, hand: list[str]) -> None:
+        self.hand = hand
+
+    def seeCard(self, playername: str, card: str):
+        consoleOut(f"{playername} shows you the card - {card}.")
+
+    def showCard(self, seerName: str, rumour: dict[str,str]) -> str:
+        cardsHeld: list[str] = [card for card in rumour.values() if card in self.hand]
+        card: str = ''
+
+        if len(cardsHeld) == 1:
+            consoleOut(f"You showed {seerName} the card - {cardsHeld[0]}.")
+            card = cardsHeld[0]
+        else:
+            card = getUserInput(cardsHeld, f"You're holding the cards {cardsHeld}. Which would you like to show to {seerName}?")
+        
+        return card
 
     def getRumour(self) -> dict[str, str]:
-        person = self.getInput(cardDict['people'],
-                               "Please input a persons name.",
-                               f"*Please select a valid player name from: {cardDict['people']}.")
-        
-        room = self.getInput(cardDict['rooms'],
-                               "Please input a room.",
-                               f"*Please select a valid room from: {cardDict['rooms']}")
-
-        weapon = self.getInput(cardDict['weapons'],
-                               "Please input a murder weapon.",
-                               f"*Please select a valid weapon from: {cardDict['weapons']}")
+        person = getUserInput(cardDict['people'],  "Please input a persons name.")
+        room   = getUserInput(cardDict['rooms'],   "Please input a room.")
+        weapon = getUserInput(cardDict['weapons'], "Please input a murder weapon.")
         
         return {'people': person, 'rooms': room, 'weapons': weapon}
 
     def getAccusation(self) -> dict[str, str]:
         return self.getRumour()
 
-    def turn(self) -> None:
-        choice: str = self.getInput(['a','r'], "Would you like to accuse or start a rumour? a/r", "Please select a or r...")
-        
-        return choice
-    
-    def getInput(self, validInputs: list[str], startMsg: str, errorMsg: str) -> str:
-        consoleOut(startMsg)
-        data: str = input(">_ ").lower()
+    def turn(self) -> str:
+        return getUserInput(['a','r'], "Would you like to accuse or start a rumour? a/r", "Please select a or r...")
 
-        while data not in validInputs:
-            consoleOut(errorMsg)
-            data = input(">_ ").lower()
-
-        return data
 
 
 # populates empty player spaces with agents and sets global variables. Returns a list of Player of size playerCount
@@ -116,4 +149,4 @@ class Human(Player):
 
 #     return humanPlayers + [Agent(names[i]) for i in range(numAgents)]
 
-genericNames = ['John','Barbera','Jessie','Jack','Chloe','Casey','Emily','Josh','Corey','Georgia','Stacey','Harry','Paul','Shaun']
+genericNames = ["Barbera", "Shaun", "Sandra", "Kim", "Jim", "Lance", "Quinoa", "Prince", "Harry", "Isa", "Dick"]

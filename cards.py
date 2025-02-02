@@ -1,3 +1,6 @@
+from lib import log
+
+
 
 class Tracker_Card:
     def __init__(self, card: str):
@@ -5,10 +8,10 @@ class Tracker_Card:
         self.player: str = ''
         self.antiPlayers: list[str] = []
 
-    def setPlayer(self, playername: str) -> None:
-        if playername != self.player: self.player = playername
+    def trackPlayer(self, playername: str) -> None:
+        self.player = playername
 
-    def addAntiPlayer(self, playername: str) -> None:
+    def trackAntiPlayer(self, playername: str) -> None:
         if playername not in self.antiPlayers: self.antiPlayers.append(playername)
 
     def getAntiPlayers(self) -> list[str]:
@@ -22,14 +25,19 @@ class Tracker:
     def loadHand(self, playername: str, hand: list[Tracker_Card]) -> None:
         for card in hand: self.cards[card].player = playername
 
-    def addAntiCard(self, playername: str, card: str) -> None:
-        self.cards[card].addAntiPlayer(playername)
+    # when a player passes, track that they do not have a card
+    def trackAntiCard(self, playername: str, card: str) -> None:
+        self.cards[card].trackAntiPlayer(playername)
 
-    def addAntiCards(self, playername: str, cards: list[str]) -> None:
-        for card in cards: self.addAntiCard(playername, card)
+    def trackAntiCards(self, playername: str, cards: list[str]) -> None:
+        for card in cards: self.trackAntiCard(playername, card)
 
-    def addCard(self, playername: str, card: str) -> None:
-        self.cards[card].setPlayer(playername)
+    # when a card has been seen, track the player that showed it
+    def trackCard(self, playername: str, card: str) -> None:
+        self.cards[card].trackPlayer(playername)
+
+    def trackCards(self, playername: str, cards: list[str]) -> None:
+        for card in cards: self.trackCard(playername, card)
 
     # reutrns a specific tracker card which has additional information
     def getCard(self, card: str) -> Tracker_Card:
@@ -37,6 +45,15 @@ class Tracker:
 
     def getAllCards(self) -> list[Tracker_Card]:
         return list(self.cards.values())
+
+    def getUnknowns(self) -> dict[str, list]:
+        unknowns: list[str] = []
+
+        for tracker_card in self.cards.values():
+            if tracker_card.player == '':
+                unknowns.append(tracker_card.card)
+
+        return categorise(unknowns)
 
 
 
@@ -60,7 +77,7 @@ def edict() -> dict[str, str]:
 def iscard(card: str) -> bool:
     return card in RAWCARDS
 
-def categorise(cards: list) -> dict[str, list]:
+def categorise(cards: list[str]) -> dict[str, list]:
     categorised = {key:[] for key in cardDict}
 
     for card in cards:
@@ -74,7 +91,7 @@ def categorise(cards: list) -> dict[str, list]:
 
 cardDict = {'people':  ['mustard','scarlet','green','white','plum','peacock'],
             'rooms':   ['study','observatory','kitchen','living room','dining room','library','patio','pool'],
-            'weapons': ['knife','wrench','poison','axe','bat','candlestick']}
+            'weapons': ['knife','wrench','poison','axe','bat', 'pistol','candlestick']}
 
 RAWCARDS = [card for cards in cardDict.values() for card in cards]
 numCards = len(RAWCARDS)

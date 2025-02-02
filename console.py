@@ -18,3 +18,18 @@ def printRumour(playerName: str, rumour: dict) -> None:
 
 def printAccusation(playerName: str, rumour: dict) -> None:
     consoleOut('>>! %s' %formatAccusation(playerName, rumour))
+
+def getUserInput(validInputs: list[str], startMsg: str, errorMsg: str='') -> str:
+    if errorMsg == '': errorMsg = f"*Please select a valid option from {validInputs}."
+    
+    consoleOut(startMsg)
+    data: str = input(">_ ").lower()
+
+    while data not in validInputs:
+        consoleOut(errorMsg)
+        data = input(">_ ").lower()
+
+    return data
+
+
+

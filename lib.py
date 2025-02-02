@@ -2,6 +2,7 @@
 
 from random import randint
 from typing import Any
+from itertools import chain
 
 
 
@@ -24,3 +25,6 @@ def pickrandom(lst: list | dict) -> Any:
     
 def log(value: any) -> None:
     print(f"DEBUG LOG: {str(value)}")
+
+def flatten(matrix: list[list]) -> list:
+    return [item for row in matrix for item in row]
